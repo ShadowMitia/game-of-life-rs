@@ -1,0 +1,18 @@
+* Game of Life in Rust
+
+A simple game of life simulation made in Rust.
+It uses SDL2 for the windowing and OpenGL for the rendering.
+
+
+
+
+** Inspirations
+
+- [[John Conway on Numberphile]]
+- [[Daniel Shiffman's coding challenge][https://www.youtube.com/watch?v=FWSR_7kZuYg&vl=en]]
+- [[Jason Turner's learning of Rust][https://www.youtube.com/watch?v=EzQ7YIIo1rY]] [[Part 2][https://www.youtube.com/watch?v=Y5-ZgxfQvpc]]
+
+
+** References 
+- [[Wikipedia page][https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life]]
+- [[Conway's interview about Game of Life on Numberphile][https://www.youtube.com/watch?v=R9Plq-D1gEk]]
