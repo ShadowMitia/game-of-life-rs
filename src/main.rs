@@ -17,13 +17,11 @@ impl Texture {
             gl::BindTexture(gl::TEXTURE_2D, texture);
 
             // set the texture wrapping parameters
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32); // set texture wrapping to gl::REPEAT (default wrapping method)
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
             // set texture filtering parameters
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
-
-            gl::GenerateMipmap(gl::TEXTURE_2D);
 
             gl::TexImage2D(
                 gl::TEXTURE_2D,
@@ -36,8 +34,12 @@ impl Texture {
                 gl::UNSIGNED_BYTE,
                 data as *const std::ffi::c_void,
             );
+
+            gl::GenerateMipmap(gl::TEXTURE_2D);
+
             texture
         };
+
         Texture { id: texture }
     }
 }
@@ -151,10 +153,6 @@ pub fn main() -> Result<(), String> {
 
     gl::load_with(|name| video_subsystem.gl_get_proc_address(name) as *const _);
 
-    unsafe {
-        gl::Viewport(0, 0, 800, 600);
-    }
-
     debug_assert_eq!(gl_attr.context_profile(), GLProfile::Core);
     debug_assert_eq!(gl_attr.context_version(), (3, 3));
 
@@ -214,11 +212,33 @@ pub fn main() -> Result<(), String> {
             gl::FLOAT,
             gl::FALSE,
             (5 * std::mem::size_of::<f32>()) as i32,
-            std::ptr::null::<std::ffi::c_void>(),
+            (3 * std::mem::size_of::<f32>()) as *const std::ffi::c_void,
         );
 
         gl::EnableVertexAttribArray(1);
     }
+
+    let vertex_shader_source = r"
+    #version 330 core
+    layout(location = 0) in vec3 aPos;
+    
+
+    void main()
+    {
+        gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0f);
+    }
+";
+
+    let fragment_shader_source = r"
+    #version 330 core
+    out vec4 FragColor;
+
+    void main() {
+        FragColor = vec4(0.8, 0.2, 0.7, 1.0);
+    }
+";
+
+    let color_shader = shaders::ShaderProgram::new(vertex_shader_source, fragment_shader_source);
 
     let vertex_shader_source = r"
         #version 330 core
@@ -270,6 +290,15 @@ pub fn main() -> Result<(), String> {
         })
         .collect();
 
+    let mut game_of_life_history = Vec::new();
+    game_of_life_history.push(game_of_life);
+
+    unsafe {
+        gl::Viewport(0, 0, 800, 600);
+    }
+
+    let mut play = true;
+
     'running: loop {
         unsafe {
             gl::ClearColor(0.0, 0.0, 0.0, 1.0);
@@ -288,44 +317,60 @@ pub fn main() -> Result<(), String> {
                 Event::KeyDown {
                     keycode: Some(Keycode::Space),
                     ..
-                } => is_spaced_pressed = true,
+                } => play = !play,
                 _ => {}
             }
         }
 
         // UPDATE
-        if is_spaced_pressed {
-            game_of_life = game_of_life.simulate();
+        if (play) {
+            let new_game_of_life = game_of_life_history[0].simulate();
+            game_of_life_history.insert(0, new_game_of_life);
+
+            if game_of_life_history.len() > 10 {
+                game_of_life_history.pop();
+            }
         }
 
+        // game_of_life_history.push(&game_of_life);
+
         // RENDERING
+        let mut simulation_rgb: Vec<u8> = vec![
+            255;
+            (game_of_life_history[0].width * game_of_life_history[0].height * 3)
+                as usize
+        ];
 
-        let simulation_rgb: Vec<u8> = game_of_life
-            .simulation
-            .iter()
-            .map(|&value| {
-                if *value {
-                    vec![0, 0, 0]
-                } else {
-                    vec![255, 255, 255]
+        let mut past = game_of_life_history.len() as u8;
+        for gol in game_of_life_history.iter().rev() {
+            for (index, &&cell) in gol.simulation.iter().enumerate() {
+                if cell {
+                    simulation_rgb[index * 3] = past * 12 as u8;
+                    simulation_rgb[index * 3 + 1] = past * 12 as u8;
+                    simulation_rgb[index * 3 + 2] = past * 12 as u8;
                 }
-            })
-            .flatten()
-            .collect();
+            }
+            past -= 1;
+        }
 
-        let image: image::RgbImage =
-            image::ImageBuffer::from_raw(game_of_life.width, game_of_life.height, simulation_rgb)
-                .unwrap();
+        let image: image::RgbImage = image::ImageBuffer::from_raw(
+            game_of_life_history[0].width,
+            game_of_life_history[0].height,
+            simulation_rgb,
+        )
+        .unwrap();
 
         let texture = Texture::new(
             image.into_raw().as_ptr(),
-            game_of_life.width,
-            game_of_life.height,
+            game_of_life_history[0].width,
+            game_of_life_history[0].height,
         );
 
         unsafe {
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, texture.id);
+
+            // gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
 
             gl::UseProgram(shader_program.id);
             gl::BindVertexArray(vao);
