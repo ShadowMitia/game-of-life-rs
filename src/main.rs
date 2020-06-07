@@ -1,7 +1,9 @@
+use rand::prelude::*;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::video::GLProfile;
-use rand::prelude::*;
+
+mod Shaders;
 
 struct GameOfLife<'a> {
     width: u32,
@@ -30,7 +32,7 @@ impl GameOfLife<'_> {
     }
 
     fn simulate(&self) -> Self {
-        let mut new_simulation =  vec![&false; (self.width * self.height) as usize];
+        let mut new_simulation = vec![&false; (self.width * self.height) as usize];
 
         let mut neighbor_count: Vec<i32> = vec![0; (self.width * self.height) as usize];
 
@@ -112,6 +114,10 @@ pub fn main() -> Result<(), String> {
 
     gl::load_with(|name| video_subsystem.gl_get_proc_address(name) as *const _);
 
+    unsafe {
+        gl::Viewport(0, 0, 800, 600);
+    }
+
     debug_assert_eq!(gl_attr.context_profile(), GLProfile::Core);
     debug_assert_eq!(gl_attr.context_version(), (3, 3));
 
@@ -192,47 +198,6 @@ pub fn main() -> Result<(), String> {
         }
     ";
 
-    let vertex_shader_source = std::ffi::CString::new(vertex_shader_source).unwrap();
-
-    let mut vertex_shader_sources = Vec::new();
-    vertex_shader_sources.push(vertex_shader_source.as_ptr());
-
-    let vertex_shader = unsafe { gl::CreateShader(gl::VERTEX_SHADER) };
-
-    unsafe {
-        gl::ShaderSource(
-            vertex_shader,
-            1,
-            vertex_shader_sources.as_ptr(),
-            std::ptr::null(),
-        );
-
-        gl::CompileShader(vertex_shader);
-
-        let mut success = 0;
-
-        gl::GetShaderiv(vertex_shader, gl::COMPILE_STATUS, &mut success);
-        if success <= 0 {
-            let mut len = 0;
-            gl::GetShaderiv(vertex_shader, gl::INFO_LOG_LENGTH, &mut len);
-
-            let mut buffer = Vec::with_capacity(len as usize);
-
-            gl::GetShaderInfoLog(
-                vertex_shader,
-                len,
-                std::ptr::null_mut(),
-                buffer.as_mut_ptr(),
-            );
-
-            let log_info = buffer.iter().map(|&x| x as u8).collect();
-            println!(
-                "Vertex shader compilation failed\n{}\n",
-                String::from_utf8_unchecked(log_info)
-            );
-        }
-    }
-
     let fragment_shader_source = r"
         #version 330 core
         out vec4 FragColor;
@@ -246,83 +211,12 @@ pub fn main() -> Result<(), String> {
         }
     ";
 
-    let fragment_shader_source = std::ffi::CString::new(fragment_shader_source).unwrap();
-
-    let mut fragment_shader_sources = Vec::new();
-    fragment_shader_sources.push(fragment_shader_source.as_ptr());
-
-    let fragment_shader = unsafe { gl::CreateShader(gl::FRAGMENT_SHADER) };
+    let shader_program = Shaders::ShaderProgram::new(vertex_shader_source, fragment_shader_source);
 
     unsafe {
-        gl::ShaderSource(
-            fragment_shader,
-            1,
-            fragment_shader_sources.as_ptr(),
-            std::ptr::null(),
-        );
-
-        gl::CompileShader(fragment_shader);
-
-        let mut success = 0;
-
-        gl::GetShaderiv(fragment_shader, gl::COMPILE_STATUS, &mut success);
-        if success <= 0 {
-            let mut len = 0;
-            gl::GetShaderiv(fragment_shader, gl::INFO_LOG_LENGTH, &mut len);
-
-            let mut buffer = Vec::with_capacity(len as usize);
-
-            gl::GetShaderInfoLog(
-                fragment_shader,
-                len,
-                std::ptr::null_mut(),
-                buffer.as_mut_ptr(),
-            );
-
-            let log_info = buffer.iter().map(|&x| x as u8).collect();
-            println!(
-                "Fragment shader compilation failed\n{}\n",
-                String::from_utf8_unchecked(log_info)
-            );
-        }
-    }
-
-    let shader_program = unsafe { gl::CreateProgram() };
-
-    unsafe {
-        gl::AttachShader(shader_program, vertex_shader);
-        gl::AttachShader(shader_program, fragment_shader);
-        gl::LinkProgram(shader_program);
-
-        let mut success = 0;
-
-        gl::GetProgramiv(shader_program, gl::LINK_STATUS, &mut success);
-        if success <= 0 {
-            let mut len = 0;
-            gl::GetProgramiv(shader_program, gl::INFO_LOG_LENGTH, &mut len);
-
-            let mut buffer = Vec::with_capacity(len as usize);
-
-            gl::GetProgramInfoLog(
-                shader_program,
-                len,
-                std::ptr::null_mut(),
-                buffer.as_mut_ptr(),
-            );
-
-            let log_info = buffer.iter().map(|&x| x as u8).collect();
-            println!(
-                "Shader program shader compilation failed\n{}\n",
-                String::from_utf8_unchecked(log_info)
-            );
-        }
-
-        gl::DeleteShader(vertex_shader);
-        gl::DeleteShader(fragment_shader);
-
         let t = std::ffi::CString::new("tex").unwrap();
 
-        gl::Uniform1i(gl::GetUniformLocation(shader_program, t.as_ptr()), 0);
+        gl::Uniform1i(gl::GetUniformLocation(shader_program.id, t.as_ptr()), 0);
     }
 
     let mut game_of_life = GameOfLife::new(100, 100);
@@ -392,11 +286,13 @@ pub fn main() -> Result<(), String> {
             gl::BindTexture(gl::TEXTURE_2D, texture);
 
             // set the texture wrapping parameters
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32); // set texture wrapping to gl::REPEAT (default wrapping method)
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32); // set texture wrapping to gl::REPEAT (default wrapping method)
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
             // set texture filtering parameters
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+
+            gl::GenerateMipmap(gl::TEXTURE_2D);
 
             gl::TexImage2D(
                 gl::TEXTURE_2D,
@@ -416,7 +312,7 @@ pub fn main() -> Result<(), String> {
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, texture);
 
-            gl::UseProgram(shader_program);
+            gl::UseProgram(shader_program.id);
             gl::BindVertexArray(vao);
             gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, std::ptr::null_mut());
             // gl::DrawArrays(gl::POINTS, 0, 4);
