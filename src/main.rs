@@ -3,7 +3,44 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::video::GLProfile;
 
-mod Shaders;
+mod shaders;
+
+struct Texture {
+    id: u32,
+}
+
+impl Texture {
+    fn new(data: *const u8, width: u32, height: u32) -> Self {
+        let texture = unsafe {
+            let mut texture = 0;
+            gl::GenTextures(1, &mut texture);
+            gl::BindTexture(gl::TEXTURE_2D, texture);
+
+            // set the texture wrapping parameters
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32); // set texture wrapping to gl::REPEAT (default wrapping method)
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
+            // set texture filtering parameters
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+
+            gl::GenerateMipmap(gl::TEXTURE_2D);
+
+            gl::TexImage2D(
+                gl::TEXTURE_2D,
+                0,
+                gl::RGB as i32,
+                width as i32,
+                height as i32,
+                0,
+                gl::RGB,
+                gl::UNSIGNED_BYTE,
+                data as *const std::ffi::c_void,
+            );
+            texture
+        };
+        Texture { id: texture }
+    }
+}
 
 struct GameOfLife<'a> {
     width: u32,
@@ -211,7 +248,7 @@ pub fn main() -> Result<(), String> {
         }
     ";
 
-    let shader_program = Shaders::ShaderProgram::new(vertex_shader_source, fragment_shader_source);
+    let shader_program = shaders::ShaderProgram::new(vertex_shader_source, fragment_shader_source);
 
     unsafe {
         let t = std::ffi::CString::new("tex").unwrap();
@@ -280,37 +317,15 @@ pub fn main() -> Result<(), String> {
             image::ImageBuffer::from_raw(game_of_life.width, game_of_life.height, simulation_rgb)
                 .unwrap();
 
-        let texture = unsafe {
-            let mut texture = 0;
-            gl::GenTextures(1, &mut texture);
-            gl::BindTexture(gl::TEXTURE_2D, texture);
-
-            // set the texture wrapping parameters
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32); // set texture wrapping to gl::REPEAT (default wrapping method)
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
-            // set texture filtering parameters
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
-
-            gl::GenerateMipmap(gl::TEXTURE_2D);
-
-            gl::TexImage2D(
-                gl::TEXTURE_2D,
-                0,
-                gl::RGB as i32,
-                game_of_life.width as i32,
-                game_of_life.height as i32,
-                0,
-                gl::RGB,
-                gl::UNSIGNED_BYTE,
-                image.into_raw().as_ptr() as *const std::ffi::c_void,
-            );
-            texture
-        };
+        let texture = Texture::new(
+            image.into_raw().as_ptr(),
+            game_of_life.width,
+            game_of_life.height,
+        );
 
         unsafe {
             gl::ActiveTexture(gl::TEXTURE0);
-            gl::BindTexture(gl::TEXTURE_2D, texture);
+            gl::BindTexture(gl::TEXTURE_2D, texture.id);
 
             gl::UseProgram(shader_program.id);
             gl::BindVertexArray(vao);
