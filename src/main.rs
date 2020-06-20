@@ -5,8 +5,13 @@ use sdl2::video::GLProfile;
 
 mod shaders;
 
+// Notes :
+// - textures are upside down, probably filled the wrong way? could be flipped with opengl?
+
 struct Texture {
     id: u32,
+    width: u32,
+    height: u32,
 }
 
 impl Texture {
@@ -26,7 +31,7 @@ impl Texture {
             gl::TexImage2D(
                 gl::TEXTURE_2D,
                 0,
-                gl::RGB as i32,
+                gl::RGB8 as i32,
                 width as i32,
                 height as i32,
                 0,
@@ -35,12 +40,33 @@ impl Texture {
                 data as *const std::ffi::c_void,
             );
 
-            gl::GenerateMipmap(gl::TEXTURE_2D);
+            // gl::GenerateMipmap(gl::TEXTURE_2D);
 
             texture
         };
 
-        Texture { id: texture }
+        Texture {
+            id: texture,
+            width,
+            height,
+        }
+    }
+
+    fn update(&self, data: *const u8) {
+        unsafe {
+            gl::BindTexture(gl::TEXTURE_2D, self.id);
+            gl::TexSubImage2D(
+                gl::TEXTURE_2D,
+                0,
+                0,
+                0,
+                self.width as i32,
+                self.height as i32,
+                gl::RGB,
+                gl::UNSIGNED_BYTE,
+                data as *const std::ffi::c_void,
+            )
+        }
     }
 }
 
@@ -73,53 +99,38 @@ impl GameOfLife<'_> {
     fn simulate(&self) -> Self {
         let mut new_simulation = vec![&false; (self.width * self.height) as usize];
 
-        let mut neighbor_count: Vec<i32> = vec![0; (self.width * self.height) as usize];
+        for j in 0..self.height as i32 {
+            for i in 0..self.width as i32 {
 
-        for i in 0..self.width as i32 {
-            for j in 0..self.height as i32 {
-                for ni in -1 as i32..=1 {
-                    for nj in -1 as i32..=1 {
+                // Count all neighbors for current simulation
+                let mut neighbor_count = 0;
+
+                for nj in -1 as i32..=1 {
+                    for ni in -1 as i32..=1 {
                         if ni == 0 && nj == 0 {
                             continue;
                         }
-                        let ni = if i + ni < 0 {
-                            (self.width - 1) as i32
-                        } else if i + ni >= self.width as i32 {
-                            0 as i32
-                        } else {
-                            i + ni
-                        };
-
-                        let nj = if j + nj < 0 {
-                            (self.height - 1) as i32
-                        } else if j + nj >= self.height as i32 {
-                            0 as i32
-                        } else {
-                            j + nj
-                        };
+                        let ni = ((i + ni) + self.width as i32) % (self.width as i32);
+                        let nj = ((j + nj) + self.height as i32) % (self.height as i32);
 
                         let active = self.simulation[index(ni, nj, self.width as i32) as usize];
                         if *active {
-                            let n = neighbor_count[index(i, j, self.width as i32) as usize];
-                            neighbor_count[index(i, j, self.width as i32) as usize] = n + 1;
+                            neighbor_count += 1;
                         }
                     }
                 }
-            }
-        }
 
-        for i in 0..self.width as i32 {
-            for j in 0..self.height as i32 {
+                // Update with Conway Rules
                 let index = index(i, j, self.width as i32);
 
                 let is_active = self.simulation[index as usize];
-                let n_count = neighbor_count[index as usize];
 
-                new_simulation[index as usize] = match (is_active, n_count) {
+                new_simulation[index as usize] = match (is_active, neighbor_count) {
                     (true, 2) => &true,
                     (_, 3) => &true,
                     _ => &false,
                 }
+
             }
         }
 
@@ -290,6 +301,46 @@ pub fn main() -> Result<(), String> {
         })
         .collect();
 
+    // game_of_life.simulation = vec![
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &true, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &true, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &true, &true,
+    //     &true, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false, &false, &false, &false, &false, &false, &false, &false,
+    //     &false, &false, &false, &false,
+    // ];
+
     let mut game_of_life_history = Vec::new();
     game_of_life_history.push(game_of_life);
 
@@ -297,15 +348,75 @@ pub fn main() -> Result<(), String> {
         gl::Viewport(0, 0, 800, 600);
     }
 
+    let glider_width = 5;
+    let glider_height = 5;
+    let glider = vec![
+        false, false, false, false, false, false, false, true, false, false, false, false, false,
+        true, false, false, true, true, true, false, false, false, false, false, false,
+    ];
+
+    let glider2 = vec![
+        false, false, false, false, false, false, true, false, false, false, false, false, true,
+        true, false, false, true, true, false, false, false, false, false, false, false,
+    ];
+
+    let mut patterns = Vec::new();
+
+    let mut g = glider;
+
+    for _ in 0..4 {
+        let mut glider_pattern = 0;
+        for val in &g {
+            glider_pattern <<= 1;
+            glider_pattern |= if *val { 1 } else { 0 };
+        }
+
+        patterns.push(glider_pattern);
+
+        let temp = g.clone();
+
+        for j in 0..glider_height {
+            for i in 0..glider_width {
+                g[index(i, j, glider_width)] = temp[index(glider_width - 1 - j, i, glider_width)]
+            }
+        }
+    }
+
+    let mut g = glider2;
+
+    for _ in 0..4 {
+        let mut glider_pattern = 0;
+        for val in &g {
+            glider_pattern <<= 1;
+            glider_pattern |= if *val { 1 } else { 0 };
+        }
+
+        patterns.push(glider_pattern);
+
+        let temp = g.clone();
+
+        for j in 0..glider_height {
+            for i in 0..glider_width {
+                g[index(i, j, glider_width)] = temp[index(glider_width - 1 - j, i, glider_width)]
+            }
+        }
+    }
+
     let mut play = true;
+
+    // Buffers
+
+    let mut simulation_rgb: Vec<u8> =
+        vec![255; (game_of_life_history[0].width * game_of_life_history[0].height * 3) as usize];
+
+    let simulation_rgb_ptr = simulation_rgb.as_ptr();
+    let texture = Texture::new(simulation_rgb_ptr, game_of_life_history[0].width, game_of_life_history[0].height);
 
     'running: loop {
         unsafe {
             gl::ClearColor(0.0, 0.0, 0.0, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
         }
-
-        let mut is_spaced_pressed = false;
 
         for event in event_pump.poll_iter() {
             match event {
@@ -323,7 +434,7 @@ pub fn main() -> Result<(), String> {
         }
 
         // UPDATE
-        if (play) {
+        if play {
             let new_game_of_life = game_of_life_history[0].simulate();
             game_of_life_history.insert(0, new_game_of_life);
 
@@ -332,17 +443,60 @@ pub fn main() -> Result<(), String> {
             }
         }
 
-        // game_of_life_history.push(&game_of_life);
-
-        // RENDERING
-        let mut simulation_rgb: Vec<u8> = vec![
+        let mut glider_board = vec![
             255;
             (game_of_life_history[0].width * game_of_life_history[0].height * 3)
                 as usize
         ];
 
-        let mut past = game_of_life_history.len() as u8;
-        for gol in game_of_life_history.iter().rev() {
+        let width = game_of_life_history[0].width;
+        let height = game_of_life_history[0].height;
+
+        let mut glider_indices = Vec::new();
+
+        for x in 0..width {
+            for y in 0..height {
+                let mut pattern = 0;
+                for i in 0..5 {
+                    for j in 0..5 {
+                        let val = game_of_life_history[0].simulation
+                            [index((x + i) % width, (y + j) % height, width) as usize];
+                        pattern <<= 1;
+                        pattern |= if *val { 1 } else { 0 };
+                    }
+                }
+
+                if patterns.iter().any(|&p| p == pattern) {
+                    for i in 0..5 {
+                        for j in 0..5 {
+                            let index = index((x + i) % width, (y + j) % height, width) as usize;
+                            let val = game_of_life_history[0].simulation[index];
+                            if *val {
+                                glider_indices.push(index);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for index in glider_indices {
+            glider_board[index * 3] = 255;
+            glider_board[index * 3 + 1] = 0;
+            glider_board[index * 3 + 2] = 0;
+        }
+
+        // RENDERING
+
+        simulation_rgb = simulation_rgb.iter().map(|_| 255).collect();
+
+        let mut past = (game_of_life_history.len() - 1) as u8;
+        for gol in game_of_life_history
+            .iter()
+            .rev()
+            .take(game_of_life_history.len() - 1)
+        {
+            // for gol in game_of_life_history.iter().take(1) {
             for (index, &&cell) in gol.simulation.iter().enumerate() {
                 if cell {
                     simulation_rgb[index * 3] = past * 12 as u8;
@@ -353,18 +507,44 @@ pub fn main() -> Result<(), String> {
             past -= 1;
         }
 
-        let image: image::RgbImage = image::ImageBuffer::from_raw(
-            game_of_life_history[0].width,
-            game_of_life_history[0].height,
-            simulation_rgb,
-        )
-        .unwrap();
+        let gol = &game_of_life_history[0];
 
-        let texture = Texture::new(
-            image.into_raw().as_ptr(),
-            game_of_life_history[0].width,
-            game_of_life_history[0].height,
-        );
+        // for gol in game_of_life_history.iter().take(1) {
+        for (index, &&cell) in gol.simulation.iter().enumerate() {
+            if cell {
+                simulation_rgb[index * 3] = 0 as u8;
+                simulation_rgb[index * 3 + 1] = 0 as u8;
+                simulation_rgb[index * 3 + 2] = 0 as u8;
+            }
+        }
+
+        // Creates a checkerboard!
+
+        // for i in 0..game_of_life_history[0].width {
+        //     for j in 0..game_of_life_history[0].height {
+        //         let x = i * 3;
+        //         let y = j * 3;
+        //         let index = index(x, y, game_of_life_history[0].width) as usize;
+        //         if i % 2 == 1 - (j % 2) {
+        //             simulation_rgb[index] = 0;
+        //             simulation_rgb[index + 1] = 0;
+        //             simulation_rgb[index + 2] = 0;
+        //         } else {
+        //             simulation_rgb[index] = 255;
+        //             simulation_rgb[index + 1] = 255;
+        //             simulation_rgb[index + 2] = 255;
+        //         }
+        //     }
+        // }
+
+        simulation_rgb = simulation_rgb
+            .iter()
+            .zip(glider_board)
+            .map(|(&val, col)| if val == 0 { col } else { val })
+            .collect();
+
+        let simulation_rgb_ptr = simulation_rgb.as_ptr();
+        texture.update(simulation_rgb_ptr);
 
         unsafe {
             gl::ActiveTexture(gl::TEXTURE0);
