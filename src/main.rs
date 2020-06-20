@@ -7,6 +7,8 @@ mod shaders;
 
 // Notes :
 // - textures are upside down, probably filled the wrong way? could be flipped with opengl?
+// - could use a ring of game of life buffers to do the simulation and not having to reallocate a vec<bool> at every frame
+// - generalize into cellular automaton structures
 
 struct Texture {
     id: u32,
